@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.json">
+<title>Serentha Villas Manager</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--text:#17202a;--muted:#687385;--line:#e4e7eb;--accent:#111827;--ok:#16834b;--danger:#c73535;--blue:#1769aa}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+header{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:14px 16px calc(10px + env(safe-area-inset-top));}
+h1{font-size:22px;margin:0 0 2px}.sub{color:var(--muted);font-size:13px}
+main{padding:16px 16px 95px;max-width:760px;margin:auto}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;box-shadow:0 2px 10px rgba(0,0,0,.035);margin-bottom:12px}
+.card h3{margin:0 0 6px;font-size:17px}.muted{color:var(--muted);font-size:13px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.stack{display:grid;gap:9px}
+button,input,select,textarea{font:inherit}button{border:0;border-radius:12px;padding:10px 13px;background:var(--accent);color:#fff;font-weight:650;cursor:pointer}button.secondary{background:#eef1f4;color:#18212b}button.danger{background:#fff0f0;color:var(--danger);border:1px solid #ffd1d1}button.ok{background:#e9f8ef;color:var(--ok)}button.small{padding:7px 9px;font-size:13px}
+input,select,textarea{width:100%;border:1px solid #d8dde3;border-radius:11px;padding:10px;background:#fff;color:var(--text)}label{font-size:12px;font-weight:650;color:#596273;display:block;margin-bottom:5px}.field{margin-bottom:10px}
+nav{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.96);backdrop-filter:blur(14px);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 5px calc(8px + env(safe-area-inset-bottom));z-index:10}nav button{background:transparent;color:#596273;padding:6px 8px;font-size:11px}nav button.active{color:#111827;font-weight:800}.ico{font-size:20px;display:block;margin-bottom:1px}
+.badge{display:inline-block;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:700;background:#eef1f4}.badge.ok{background:#e9f8ef;color:var(--ok)}.badge.red{background:#fff0f0;color:var(--danger)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:none;align-items:flex-end}.sheet{background:#fff;width:100%;max-height:90vh;overflow:auto;border-radius:22px 22px 0 0;padding:18px 16px calc(24px + env(safe-area-inset-bottom))}.sheet h2{margin:0 0 15px;font-size:20px}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px}.check{border:1px solid var(--line);border-radius:11px;padding:9px}.check input{width:auto;margin-right:6px}
+.empty{padding:25px 10px;text-align:center;color:var(--muted)}.top-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.stat{font-size:24px;font-weight:800}.mini{font-size:12px;color:var(--muted)}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<header><h1 id="title">Serentha Villas Manager</h1><div class="sub">Tek kullanıcı • ücretsiz PWA sürümü</div></header>
+<main id="app"></main>
+<nav>
+<button data-tab="home" class="active"><span class="ico">🏠</span>Evler</button>
+<button data-tab="tasks"><span class="ico">🔧</span>İşler</button>
+<button data-tab="guests"><span class="ico">👤</span>Misafir</button>
+<button data-tab="finance"><span class="ico">💰</span>Finans</button>
+<button data-tab="settings"><span class="ico">⚙️</span>Ayarlar</button>
+</nav>
+
+<div id="modal" class="modal"><div class="sheet" id="sheet"></div></div>
+
+<script>
+const KEY="serentha_manager_free_v5";
+let db=JSON.parse(localStorage.getItem(KEY)||'null')||{villas:[],tasks:[],tests:[],guests:[],expenses:[],tariff:{electric:0,water:0},settings:{notify:false,time:"20:00",days:1,sound:true}};
+let tab="home", selectedVilla=null;
+function save(){localStorage.setItem(KEY,JSON.stringify(db))}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+function money(n){return Number(n||0).toLocaleString("tr-TR",{style:"currency",currency:"TRY"})}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function today(){return new Date().toISOString().slice(0,10)}
+function dueDate(task){let d=new Date(task.last||today()); d.setDate(d.getDate()+Number(task.every||1)); return d.toISOString().slice(0,10)}
+function openModal(title,body){document.getElementById("sheet").innerHTML=`<h2>${title}</h2>${body}<div class="top-actions"><button class="secondary" onclick="closeModal()">Vazgeç</button></div>`;document.getElementById("modal").style.display="flex"}
+function closeModal(){document.getElementById("modal").style.display="none"}
+document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")closeModal()})
+
+function render(){
+ document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+ const a=document.getElementById("app");
+ if(selectedVilla && tab==="villa"){renderVilla(a);return}
+ if(tab==="home")renderHome(a); else if(tab==="tasks")renderTasks(a); else if(tab==="guests")renderGuests(a); else if(tab==="finance")renderFinance(a); else renderSettings(a);
+}
+function renderHome(a){
+ let pending=db.tasks.filter(t=>t.villas?.length && (!t.last || dueDate(t)<=today())).length;
+ a.innerHTML=`<div class="row"><div><div class="stat">${db.villas.length}</div><div class="mini">Villa</div></div><div><div class="stat">${pending}</div><div class="mini">Bekleyen iş</div></div><button onclick="addVilla()">＋ Villa Ekle</button></div><div class="top-actions"></div>`;
+ if(!db.villas.length){a.innerHTML+=`<div class="card empty">Henüz villa yok.<br>Villa eklemek yalnızca bu ana ekrandan yapılır.</div>`}
+ db.villas.forEach(v=>{let nt=db.tasks.filter(t=>t.villas.includes(v.id)&&(!t.last||dueDate(t)<=today())).length; a.innerHTML+=`<div class="card"><div class="row"><div><h3>${esc(v.name)}</h3><div class="muted">${esc(v.location||"Konum belirtilmedi")}</div></div><span class="badge ${nt?'red':'ok'}">${nt?nt+" bekleyen":"Güncel"}</span></div><div class="top-actions"><button onclick="enterVilla('${v.id}')">Giriş →</button><button class="secondary" onclick="editVilla('${v.id}')">Düzenle</button><button class="danger" onclick="deleteVilla('${v.id}')">Sil</button></div></div>`})
+}
+function enterVilla(id){selectedVilla=id;tab="villa";render()}
+function addVilla(){openModal("Yeni Villa",`<div class="field"><label>Villa adı</label><input id="vn" placeholder="Serentha Villa 1"></div><div class="field"><label>Konum</label><input id="vl" placeholder="Kadriye, Belek"></div><div class="field"><label>Not</label><textarea id="vo" rows="3"></textarea></div><button onclick="doAddVilla()">Villa Ekle</button>`)}
+function doAddVilla(){let name=document.getElementById("vn").value.trim();if(!name)return alert("Villa adı gerekli.");db.villas.push({id:uid(),name,location:document.getElementById("vl").value,notes:document.getElementById("vo").value});save();closeModal();render()}
+function editVilla(id){let v=db.villas.find(x=>x.id===id);openModal("Villa Düzenle",`<div class="field"><label>Villa adı</label><input id="vn" value="${esc(v.name)}"></div><div class="field"><label>Konum</label><input id="vl" value="${esc(v.location||"")}"></div><div class="field"><label>Not</label><textarea id="vo" rows="3">${esc(v.notes||"")}</textarea></div><button onclick="doEditVilla('${id}')">Kaydet</button>`)}
+function doEditVilla(id){let v=db.villas.find(x=>x.id===id);v.name=document.getElementById("vn").value.trim();v.location=document.getElementById("vl").value;v.notes=document.getElementById("vo").value;save();closeModal();render()}
+function deleteVilla(id){let v=db.villas.find(x=>x.id===id);if(!confirm(`"${v.name}" silinsin mi? Bu villaya bağlı iş, test, misafir ve gider kayıtları da silinir.`))return;db.villas=db.villas.filter(x=>x.id!==id);db.tasks=db.tasks.filter(x=>!x.villas.includes(id));db.tests=db.tests.filter(x=>x.villa!==id);db.guests=db.guests.filter(x=>x.villa!==id);db.expenses=db.expenses.filter(x=>x.villa!==id);save();render()}
+
+function renderVilla(a){
+ let v=db.villas.find(x=>x.id===selectedVilla);if(!v){selectedVilla=null;tab="home";return render()}
+ let tasks=db.tasks.filter(t=>t.villas.includes(v.id)), tests=db.tests.filter(t=>t.villa===v.id), guests=db.guests.filter(g=>g.villa===v.id), ex=db.expenses.filter(e=>e.villa===v.id);
+ a.innerHTML=`<div class="top-actions"><button class="secondary" onclick="selectedVilla=null;tab='home';render()">← Evler</button><button class="secondary" onclick="editVilla('${v.id}')">Düzenle</button><button class="danger" onclick="deleteVilla('${v.id}')">Villa Sil</button></div><div class="card"><h3>${esc(v.name)}</h3><div class="muted">${esc(v.location||"")}</div></div>
+ <div class="card"><div class="row"><h3>🔧 İşler</h3><button class="small" onclick="addTask('${v.id}')">＋ İş</button></div>${tasks.length?tasks.map(t=>taskHTML(t)).join(""):`<div class="empty">Bu villaya bağlı iş yok.</div>`}</div>
+ <div class="card"><div class="row"><h3>🏊 pH / Klor Testleri</h3><button class="small" onclick="addTest('${v.id}')">＋ Test</button></div>${tests.length?tests.slice().reverse().map(t=>`<div class="card"><div class="row"><b>${esc(t.date)}</b><button class="danger small" onclick="deleteTest('${t.id}')">Sil</button></div><div>pH <b>${esc(t.ph)}</b> • Klor <b>${esc(t.cl)}</b> ppm • ${esc(t.temp||"-")}°C</div><div class="mini">Filtre: ${esc(t.pressure||"-")} bar • ${esc(t.note||"")}</div></div>`).join(""):`<div class="empty">Henüz test kaydı yok.</div>`}</div>
+ <div class="card"><div class="row"><h3>👤 Misafirler</h3><button class="small" onclick="addGuest('${v.id}')">＋ Misafir</button></div>${guests.length?guests.slice().reverse().map(g=>guestHTML(g)).join(""):`<div class="empty">Kayıt yok.</div>`}</div>
+ <div class="card"><div class="row"><h3>💰 Giderler</h3><button class="small" onclick="addExpense('${v.id}')">＋ Gider</button></div>${ex.length?ex.slice().reverse().map(e=>`<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)"><div><b>${esc(e.cat)}</b><div class="mini">${esc(e.date)} • ${esc(e.note||"")}</div></div><div><b>${money(e.amount)}</b><button class="danger small" onclick="deleteExpense('${e.id}')">Sil</button></div></div>`).join(""):`<div class="empty">Gider yok.</div>`}</div>`
+}
+function taskHTML(t){let due=dueDate(t);return `<div class="card"><div class="row"><div><b>${esc(t.name)}</b><div class="mini">${esc(t.category||"Genel")} • ${t.every} günde bir • Son: ${esc(t.last||"-")} • Sonraki: ${due}</div></div><button class="${due<=today()?'':'ok'} small" onclick="completeTask('${t.id}')">${due<=today()?'Tamamla':'✓'}</button></div><div class="top-actions"><button class="danger small" onclick="deleteTask('${t.id}')">Sil</button></div></div>`}
+function renderTasks(a){a.innerHTML=`<div class="row"><div><div class="stat">${db.tasks.length}</div><div class="mini">Toplam iş</div></div><button onclick="addTask()">＋ İş Oluştur</button></div>`+ (db.tasks.length?db.tasks.map(taskHTML).join(""):`<div class="card empty">Henüz iş yok.</div>`)}
+function addTask(pre){let checks=db.villas.map(v=>`<label class="check"><input type="checkbox" name="tv" value="${v.id}" ${pre===v.id?'checked':''}>${esc(v.name)}</label>`).join("");openModal("İş Oluştur",`<div class="field"><label>İş adı</label><input id="tn" placeholder="Havuz pH ve klor kontrolü"></div><div class="field"><label>Kategori</label><input id="tc" placeholder="Havuz / Bahçe / Teknik"></div><div class="field"><label>Tekrar (gün)</label><input id="te" type="number" min="1" value="7"></div><div class="field"><label>Son yapılma tarihi</label><input id="td" type="date" value="${today()}"></div><div class="field"><label>Villalar (birden fazla seçilebilir)</label><div class="checks">${checks||"Önce ana Evler ekranından villa ekle."}</div></div><button onclick="doAddTask()">İşi Kaydet</button>`)}
+function doAddTask(){let villas=[...document.querySelectorAll('input[name="tv"]:checked')].map(x=>x.value);if(!villas.length)return alert("En az bir villa seç.");let n=document.getElementById("tn").value.trim();if(!n)return alert("İş adı gerekli.");db.tasks.push({id:uid(),name:n,category:document.getElementById("tc").value,every:Number(document.getElementById("te").value||1),last:document.getElementById("td").value,villas});save();closeModal();render()}
+function completeTask(id){let t=db.tasks.find(x=>x.id===id);t.last=today();save();render()}
+function deleteTask(id){if(confirm("Bu iş silinsin mi?")){db.tasks=db.tasks.filter(x=>x.id!==id);save();render()}}
+
+function addTest(villa){openModal("Havuz Testi",`<div class="field"><label>Tarih</label><input id="xd" type="date" value="${today()}"></div><div class="field"><label>pH</label><input id="xp" type="number" step="0.01" placeholder="7.30"></div><div class="field"><label>Klor (ppm)</label><input id="xc" type="number" step="0.01" placeholder="1.50"></div><div class="field"><label>Su sıcaklığı °C</label><input id="xt" type="number" step="0.1"></div><div class="field"><label>Filtre basıncı bar</label><input id="xpr" type="number" step="0.1"></div><div class="field"><label>Not</label><textarea id="xn" rows="3"></textarea></div><button onclick="doAddTest('${villa}')">Testi Kaydet</button>`)}
+function doAddTest(villa){let ph=document.getElementById("xp").value,cl=document.getElementById("xc").value;if(ph===""||cl==="")return alert("pH ve klor sonucu gerekli.");db.tests.push({id:uid(),villa,date:document.getElementById("xd").value,ph,cl,temp:document.getElementById("xt").value,pressure:document.getElementById("xpr").value,note:document.getElementById("xn").value});save();closeModal();render()}
+function deleteTest(id){if(confirm("Test kaydı silinsin mi?")){db.tests=db.tests.filter(x=>x.id!==id);save();render()}}
+
+function guestHTML(g){let total=(Number(g.electricEnd||0)-Number(g.electricStart||0))*Number(db.tariff.electric||0)+(Number(g.waterEnd||0)-Number(g.waterStart||0))*Number(db.tariff.water||0);return `<div class="card"><div class="row"><div><b>${esc(g.name)}</b><div class="mini">${esc(g.in)} → ${esc(g.out||"-")}</div></div><span class="badge ${g.paid?'ok':'red'}">${g.paid?'Ödendi':'Ödenmedi'}</span></div><div>Elektrik: ${esc(g.electricStart||0)} → ${esc(g.electricEnd||0)} • Su: ${esc(g.waterStart||0)} → ${esc(g.waterEnd||0)}</div><div><b>Tahmini tutar: ${money(total)}</b></div><div class="top-actions">${!g.paid?`<button class="ok small" onclick="markPaid('${g.id}')">✓ Ödendi Yap</button>`:''}<button class="secondary small" onclick="editGuest('${g.id}')">Düzenle</button><button class="danger small" onclick="deleteGuest('${g.id}')">Sil</button></div></div>`}
+function renderGuests(a){a.innerHTML=`<div class="card"><h3>👤 Misafirler</h3><div class="muted">Misafir eklemek için önce bir villa seç.</div></div>`+(db.guests.length?db.guests.slice().reverse().map(guestHTML).join(""):`<div class="card empty">Henüz misafir kaydı yok.</div>`)}
+function addGuest(villa){openModal("Misafir Kaydı",`<div class="field"><label>Misafir adı</label><input id="gn"></div><div class="field"><label>Giriş</label><input id="gi" type="date" value="${today()}"></div><div class="field"><label>Çıkış</label><input id="go" type="date"></div><div class="field"><label>Elektrik giriş</label><input id="ges" type="number" step="0.01"></div><div class="field"><label>Elektrik çıkış</label><input id="gee" type="number" step="0.01"></div><div class="field"><label>Su giriş</label><input id="gws" type="number" step="0.01"></div><div class="field"><label>Su çıkış</label><input id="gwe" type="number" step="0.01"></div><button onclick="doAddGuest('${villa}')">Kaydet</button>`)}
+function doAddGuest(villa){let n=document.getElementById("gn").value.trim();if(!n)return alert("Misafir adı gerekli.");db.guests.push({id:uid(),villa,name:n,in:document.getElementById("gi").value,out:document.getElementById("go").value,electricStart:document.getElementById("ges").value,electricEnd:document.getElementById("gee").value,waterStart:document.getElementById("gws").value,waterEnd:document.getElementById("gwe").value,paid:false});save();closeModal();render()}
+function markPaid(id){let g=db.guests.find(x=>x.id===id);g.paid=true;g.paidAt=today();save();render()}
+function deleteGuest(id){if(confirm("Misafir kaydı silinsin mi?")){db.guests=db.guests.filter(x=>x.id!==id);save();render()}}
+function editGuest(id){let g=db.guests.find(x=>x.id===id);openModal("Misafir Düzenle",`<div class="field"><label>Misafir adı</label><input id="gn" value="${esc(g.name)}"></div><div class="field"><label>Giriş</label><input id="gi" type="date" value="${g.in||""}"></div><div class="field"><label>Çıkış</label><input id="go" type="date" value="${g.out||""}"></div><div class="field"><label>Elektrik giriş</label><input id="ges" type="number" value="${g.electricStart||""}"></div><div class="field"><label>Elektrik çıkış</label><input id="gee" type="number" value="${g.electricEnd||""}"></div><div class="field"><label>Su giriş</label><input id="gws" type="number" value="${g.waterStart||""}"></div><div class="field"><label>Su çıkış</label><input id="gwe" type="number" value="${g.waterEnd||""}"></div><div class="top-actions">${!g.paid?`<button class="ok" onclick="markPaid('${id}');closeModal()">✓ Ödendi Yap</button>`:`<span class="badge ok">Ödendi</span>`}</div><button onclick="doEditGuest('${id}')">Kaydet</button>`)}
+function doEditGuest(id){let g=db.guests.find(x=>x.id===id);Object.assign(g,{name:document.getElementById("gn").value,in:document.getElementById("gi").value,out:document.getElementById("go").value,electricStart:document.getElementById("ges").value,electricEnd:document.getElementById("gee").value,waterStart:document.getElementById("gws").value,waterEnd:document.getElementById("gwe").value});save();closeModal();render()}
+
+function addExpense(villa){openModal("Gider",`<div class="field"><label>Kategori</label><input id="ec" placeholder="Havuz / Bahçe / Elektrik"></div><div class="field"><label>Tutar</label><input id="ea" type="number" step="0.01"></div><div class="field"><label>Tarih</label><input id="ed" type="date" value="${today()}"></div><div class="field"><label>Not</label><textarea id="en"></textarea></div><button onclick="doAddExpense('${villa}')">Kaydet</button>`)}
+function doAddExpense(villa){db.expenses.push({id:uid(),villa,cat:document.getElementById("ec").value,amount:Number(document.getElementById("ea").value||0),date:document.getElementById("ed").value,note:document.getElementById("en").value});save();closeModal();render()}
+function deleteExpense(id){if(confirm("Gider silinsin mi?")){db.expenses=db.expenses.filter(x=>x.id!==id);save();render()}}
+function renderFinance(a){let ex=db.expenses.reduce((s,x)=>s+Number(x.amount||0),0),col=db.guests.filter(x=>x.paid).reduce((s,g)=>{return s+(Math.max(0,Number(g.electricEnd||0)-Number(g.electricStart||0))*db.tariff.electric+Math.max(0,Number(g.waterEnd||0)-Number(g.waterStart||0))*db.tariff.water)},0);a.innerHTML=`<div class="grid"><div class="card"><div class="stat">${money(ex)}</div><div class="mini">Toplam gider</div></div><div class="card"><div class="stat">${money(col)}</div><div class="mini">Tahsilat</div></div></div><div class="card"><h3>Son giderler</h3>${db.expenses.length?db.expenses.slice().reverse().map(e=>`<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line)"><div>${esc(e.cat)}<div class="mini">${esc(e.date)}</div></div><b>${money(e.amount)}</b></div>`).join(""):`<div class="empty">Gider yok.</div>`}</div>`}
+
+function renderSettings(a){a.innerHTML=`<div class="card"><h3>🔔 Bildirimler</h3><div class="field"><label><input id="no" type="checkbox" ${db.settings.notify?'checked':''}> Bildirimleri etkinleştir</label></div><div class="field"><label>Bildirim saati</label><input id="nt" type="time" value="${db.settings.time}"></div><div class="field"><label>Kaç gün önce</label><input id="nd" type="number" min="0" value="${db.settings.days}"></div><div class="field"><label><input id="ns" type="checkbox" ${db.settings.sound?'checked':''}> Bildirim sesi açık</label></div><button onclick="saveNotify()">Ayarları Kaydet</button> <button class="secondary" onclick="requestNotifications()">Bildirim İzni</button><button class="secondary" onclick="testNotification()">Test Bildirimi</button><div class="mini" style="margin-top:10px">Ücretsiz PWA'da bildirim kontrolü uygulama açıkken güvenilirdir. Uygulama tamamen kapalıyken kesin zamanlı bildirim için native iOS/Apple Developer gerekir.</div></div>
+<div class="card"><h3>💧 Elektrik / Su Tarifesi</h3><div class="field"><label>Elektrik TL/kWh</label><input id="et" type="number" step="0.0001" value="${db.tariff.electric}"></div><div class="field"><label>Su TL/m³</label><input id="wt" type="number" step="0.0001" value="${db.tariff.water}"></div><button onclick="saveTariff()">Tarifeyi Kaydet</button></div>
+<div class="card"><h3>🧹 Veri</h3><button class="danger" onclick="resetAll()">Uygulamayı Sıfırla</button><div class="mini" style="margin-top:8px">Bu işlem tüm villa, iş, test, misafir ve gider kayıtlarını siler.</div></div>`}
+function saveNotify(){db.settings.notify=document.getElementById("no").checked;db.settings.time=document.getElementById("nt").value;db.settings.days=Number(document.getElementById("nd").value||1);db.settings.sound=document.getElementById("ns").checked;save();alert("Bildirim ayarları kaydedildi.")}
+function saveTariff(){db.tariff.electric=Number(document.getElementById("et").value||0);db.tariff.water=Number(document.getElementById("wt").value||0);save();alert("Tarifeler kaydedildi.")}
+async function requestNotifications(){if(!("Notification"in window))return alert("Bu tarayıcı bildirimleri desteklemiyor.");let p=await Notification.requestPermission();alert("Bildirim izni: "+p)}
+function testNotification(){if(!("Notification"in window)||Notification.permission!=="granted")return alert("Önce Bildirim İzni ver.");new Notification("Serentha Villas Manager",{body:"Test bildirimi başarıyla çalışıyor.",silent:!db.settings.sound})}
+function resetAll(){if(confirm("TÜM VERİLER silinecek. Emin misin?")){localStorage.removeItem(KEY);location.reload()}}
+
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{selectedVilla=null;tab=b.dataset.tab;render()});
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+setInterval(()=>{if(db.settings.notify)checkDue()},60000);
+function checkDue(){if(!("Notification"in window)||Notification.permission!=="granted")return;let now=new Date(), [h,m]=(db.settings.time||"20:00").split(":").map(Number);if(now.getHours()!==h||now.getMinutes()!==m)return;let target=new Date(now);target.setDate(target.getDate()+Number(db.settings.days||1));let ds=target.toISOString().slice(0,10);let due=db.tasks.filter(t=>dueDate(t)===ds);if(due.length)new Notification("Serentha Villas Manager",{body:`${due.length} iş ${db.settings.days} gün içinde yapılacak.`,silent:!db.settings.sound})}
+render();
+</script>
+</body>
+</html>
